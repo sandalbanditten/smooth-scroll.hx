@@ -28,4 +28,19 @@ C-d = ":half-page-down-smooth"
 C-u = ":half-page-up-smooth"
 pageup = ":page-up-smooth"
 pagedown = ":page-down-smooth"
+
+[keys.normal.z]
+z = ":align-view-center-smooth"
+t = ":align-view-top-smooth"
+b = ":align-view-bottom-smooth"
 ```
+
+The alignment functions land the cursor exactly where `zz`, `zt` and `zb` do, which means
+they respect `editor.scrolloff`: with the default of `5`, `zt` leaves five rows above the
+cursor rather than putting it flush against the top. That margin is discovered by asking
+Helix how far it is willing to scroll, so there is nothing to configure.
+
+One known limitation: if `editor.scrolloff` is set to half the height of the viewport or
+more, the alignments can settle one row away from where the built-ins would. Helix uses a
+slightly different margin at the bottom of the viewport than at the top, and only the top
+one is observable from a plugin.

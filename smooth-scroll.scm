@@ -1,82 +1,57 @@
-(require "helix/components.scm")
-(require "helix/editor.scm")
-(require "helix/misc.scm")
-(require "helix/static.scm")
-(require-builtin helix/core/text)
-
-(require "src/utils.scm")
+(require "src/animation.scm")
+(require "src/scroll.scm")
+(require "src/viewport.scm")
 
 (provide half-page-up-smooth
          half-page-down-smooth
          page-up-smooth
-         page-down-smooth)
+         page-down-smooth
+         align-view-top-smooth
+         align-view-center-smooth
+         align-view-bottom-smooth)
 
-(define *active-scroll-id* 0)
+;;;; Page scrolling: replacements for C-d, C-u, PageUp and PageDown.
 
-(define (at-end-of-document?)
-  (let* ([doc-id (editor->doc-id (editor-focus))]
-         [rope (editor->text doc-id)]
-         [cursor-pos (cursor-position)]
-         [doc-length (rope-len-chars rope)])
-    (>= cursor-pos (- doc-length 1))))
-
-(define (calculate-delay size)
-  (cond
-    [(>= size 50) 1]
-    [(>= size 40) 2]
-    [(>= size 30) 3]
-    [(>= size 20) 4]
-    [(>= size 10) 5]
-    [else 10]))
-
-(define (calculate-step size)
-  (ceiling (/ size 20)))
-
-(define (move_up_single)
-  (begin
-    (move_visual_line_up)
-    (scroll_up)))
-
-(define (move_down_single)
-  (begin
-    (when (>= (get-current-line-number) 6)
-      (scroll_down))
-    (move_visual_line_down)))
-
-(define (start-smooth-scroll direction size)
-  (set! *active-scroll-id* (modulo (+ *active-scroll-id* 1) 1000))
-  (let ([my-scroll-id *active-scroll-id*]
-        [scroll-fn (match direction
-                     ['up move_up_single]
-                     ['down move_down_single]
-                     [_ (error "Invalid scroll direction" direction)])]
-        [step (calculate-step size)]
-        [delay-ms (calculate-delay size)])
-    (let loop ([remaining size])
-      (when (and (> remaining 0) (not (and (eq? direction 'down) (at-end-of-document?))))
-        (repeat-n-times scroll-fn step)
-        (enqueue-thread-local-callback-with-delay delay-ms
-                                                  (lambda ()
-                                                    (when (= my-scroll-id *active-scroll-id*)
-                                                      (loop (- remaining step)))))))))
-
-(define (view-height)
-  (let ([area (editor-focused-buffer-area)])
-    (if area
-        (- (area-height area) 2)
-        (error "Unable to retrieve buffer height"))))
-
-(define (half-view-height)
-  (ceiling (/ (view-height) 2)))
+(define (scroll-page-smooth direction size)
+  (animate-scroll size
+                  (page-step direction)
+                  (lambda () (and (eq? direction 'down) (at-end-of-document?)))))
 
 (define (half-page-up-smooth)
-  (start-smooth-scroll 'up (half-view-height)))
+  (scroll-page-smooth 'up (half-page-height)))
 
 (define (half-page-down-smooth)
-  (start-smooth-scroll 'down (half-view-height)))
+  (scroll-page-smooth 'down (half-page-height)))
 
 (define (page-up-smooth)
-  (start-smooth-scroll 'up (view-height)))
+  (scroll-page-smooth 'up (page-height)))
 
 (define (page-down-smooth)
-  (start-smooth-scroll 'down (view-height)))
+  (scroll-page-smooth 'down (page-height)))
+
+;;;; View alignment: replacements for zt, zz and zb.
+
+;; Scrolls the view - leaving the cursor on its line - until it sits on `target-row`, or
+;; until Helix will not carry it any further. Scrolling the view down raises the cursor
+;; up the screen, and scrolling up lowers it.
+;;
+;; `Editor::cursor` caches its answer until the next redraw, so the row is read once and
+;; the distance to travel is counted out in steps rather than watched for.
+(define (align-view-smooth target-row)
+  (let ([row (cursor-view-row)])
+    (when (and row (not (= row target-row)))
+      (animate-scroll (abs (- row target-row))
+                      (view-step (if (> row target-row) 'down 'up))
+                      (lambda () #false)))))
+
+;; `zt` stops at the scrolloff margin, so that row has to be measured up front. `zb` aims
+;; for the bottom row and is stopped at the margin by Helix as the view scrolls, and `zz`
+;; always reaches the centre.
+(define (align-view-top-smooth)
+  (align-view-smooth (measure-scrolloff-margin)))
+
+(define (align-view-center-smooth)
+  (align-view-smooth (center-view-row)))
+
+(define (align-view-bottom-smooth)
+  (align-view-smooth (bottom-view-row)))

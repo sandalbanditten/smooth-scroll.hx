@@ -1,7 +1,10 @@
-(provide repeat-n-times)
+(provide repeat-while)
 
-(define (repeat-n-times f n)
+;; Applies `f` up to `n` times, stopping early if it answers #false.
+;; Answers whether all `n` applications ran.
+(define (repeat-while f n)
   (let loop ([i n])
-    (when (> i 0)
-      (f)
-      (loop (- i 1)))))
+    (cond
+      [(<= i 0) #true]
+      [(f) (loop (- i 1))]
+      [else #false])))
